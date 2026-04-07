@@ -75,12 +75,16 @@ and buffer columns are disabled unless you supply a permissive endpoint via
 | --- | --- |
 | `Up` / `Down` | Move cursor |
 | `Space` | Toggle row selection |
+| `Enter` | Copy selected addresses to the clipboard (OSC 52) |
+| `Esc` | Clear selection |
 | `Tab` | Switch focus between list and detail panes |
 | `1`-`6` | Sort by address, mainnet, devnet, testnet, programs, buffers |
 | `q` | Quit |
 | `Ctrl-C` | Quit |
 
-Pressing the same sort key again toggles ascending and descending order.
+Pressing the same sort key again toggles ascending and descending order. The
+clipboard copy uses OSC 52, which works over SSH and in most modern terminal
+emulators (iTerm2, Alacritty, Kitty, WezTerm, recent xterm).
 
 ## How it works
 

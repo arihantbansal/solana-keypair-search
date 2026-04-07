@@ -1,20 +1,24 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useAppStore, selectVisibleRows, reclaimableLamports } from "../state/store.ts";
 import type { RowState } from "../state/types.ts";
 import { formatBalanceCell, formatCountCell, formatSol, shortAddress } from "./format.ts";
 
-interface KeypairListProps {
-  readonly height: number;
-}
-
 /**
  * Multi-selectable list of discovered keypairs.
  *
- * OpenTUI's <select> is single-select only, so rows are rendered manually.
- * Cursor and selection are anchored to addresses (not indices) so the visual
- * cursor stays glued to the row it's on across filter/sort changes.
+ * OpenTUI's <select> is single-select only, so rows are rendered manually
+ * inside a <scrollbox>. Cursor and selection are anchored to addresses (not
+ * indices) so the visual cursor stays glued to the row it's on across
+ * sort/visibility changes.
+ *
+ * The scrollbox is intentionally NOT focused — focusing it would steal arrow
+ * keys for its own scrolling and conflict with the global cursor handler in
+ * App.tsx. Instead, we drive scrolling via `scrollChildIntoView` whenever
+ * the cursor moves to a new row, mirroring `Element.scrollIntoView({ block:
+ * "nearest" })` from CSSOM.
  */
-export function KeypairList({ height }: KeypairListProps): React.ReactNode {
+export function KeypairList(): React.ReactNode {
   const rows = useAppStore(selectVisibleRows);
   const cursorAddress = useAppStore((s) => s.cursorAddress);
   const selection = useAppStore((s) => s.selection);
@@ -22,20 +26,12 @@ export function KeypairList({ height }: KeypairListProps): React.ReactNode {
   const sortKey = useAppStore((s) => s.sortKey);
   const sortDescending = useAppStore((s) => s.sortDescending);
 
-  // Header (1 row) + separator (1 row) consume from the available height.
-  const visibleRowCount = Math.max(1, height - 2);
-  const cursorIdx =
-    cursorAddress === null
-      ? 0
-      : Math.max(
-          0,
-          rows.findIndex((r) => r.address === cursorAddress),
-        );
-  const start = Math.max(
-    0,
-    Math.min(rows.length - visibleRowCount, cursorIdx - Math.floor(visibleRowCount / 2)),
-  );
-  const visibleRows = rows.slice(start, start + visibleRowCount);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  useEffect(() => {
+    if (cursorAddress !== null) {
+      scrollRef.current?.scrollChildIntoView(cursorAddress);
+    }
+  }, [cursorAddress]);
 
   const sortIndicator = sortDescending ? "↓" : "↑";
   const headerLabel = (key: string, label: string): string =>
@@ -70,14 +66,16 @@ export function KeypairList({ height }: KeypairListProps): React.ReactNode {
           <text fg="#666666">no keypairs found yet…</text>
         </box>
       ) : (
-        visibleRows.map((row) => (
-          <Row
-            key={row.address}
-            row={row}
-            isCursor={row.address === cursorAddress && focusRegion === "list"}
-            isSelected={selection.has(row.address)}
-          />
-        ))
+        <scrollbox ref={scrollRef} flexGrow={1}>
+          {rows.map((row) => (
+            <Row
+              key={row.address}
+              row={row}
+              isCursor={row.address === cursorAddress && focusRegion === "list"}
+              isSelected={selection.has(row.address)}
+            />
+          ))}
+        </scrollbox>
       )}
     </box>
   );
@@ -97,8 +95,9 @@ function Row({ row, isCursor, isSelected }: RowProps): React.ReactNode {
   const fg = isCursor ? "#ffffff" : "#cccccc";
   const cursorBgProps = isCursor ? { backgroundColor: "#22334d" } : {};
 
+  // The id is what `scrollChildIntoView(cursorAddress)` looks up.
   return (
-    <box flexDirection="row" height={1} {...cursorBgProps}>
+    <box id={row.address} flexDirection="row" height={1} {...cursorBgProps}>
       <text fg={fg}>{cursorMarker} </text>
       <text fg={fg}>{checkbox} </text>
       <text fg={fg}>{padCell(shortAddress(row.address), 11)}</text>

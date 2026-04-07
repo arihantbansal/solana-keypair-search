@@ -1,5 +1,5 @@
 import React from "react";
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { useAppStore } from "../state/store.ts";
 import { StatusBar } from "./StatusBar.tsx";
 import { HelpBar } from "./HelpBar.tsx";
@@ -32,7 +32,6 @@ const SORT_KEYS_BY_DIGIT: Record<string, SortKey> = {
  */
 export function App(): React.ReactNode {
   const renderer = useRenderer();
-  const { height } = useTerminalDimensions();
   const focusRegion = useAppStore((s) => s.focusRegion);
   const actions = useAppStore((s) => s.actions);
 
@@ -70,14 +69,11 @@ export function App(): React.ReactNode {
     }
   });
 
-  // 1 row top status, 1 row bottom help. The middle row consumes the rest.
-  const middleHeight = Math.max(5, height - 2);
-
   return (
     <box flexDirection="column" width="100%" height="100%">
       <StatusBar />
-      <box flexDirection="row" height={middleHeight}>
-        <KeypairList height={middleHeight} />
+      <box flexDirection="row" flexGrow={1}>
+        <KeypairList />
         <DetailPanel />
       </box>
       <HelpBar />

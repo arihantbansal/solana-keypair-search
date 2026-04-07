@@ -127,9 +127,14 @@ export const useAppStore = create<AppState>((set) => ({
             buffers: { status: "pending" },
           });
         }
-        // Reconcile so the cursor anchors to the first *visible* row when it's
-        // unset, and never lands on a hidden row when re-merging an entry that
-        // was already marked as a program keypair.
+        // Adding a row never invalidates an existing cursor — that row is
+        // still in the map. The only case worth reconciling is when the cursor
+        // is unset, where we want to anchor it to the first visible row.
+        // Reconciling on every add would be O(N²) on a scan that finds many
+        // keypairs, since each call sorts the (growing) visible list.
+        if (state.cursorAddress !== null) {
+          return { rows: next };
+        }
         const cursorAddress = reconcileCursor({ ...state, rows: next });
         return { rows: next, cursorAddress };
       }),
@@ -226,14 +231,10 @@ export const useAppStore = create<AppState>((set) => ({
 
     setSort: (key) =>
       set((state) => {
-        const updated =
-          state.sortKey === key
-            ? { ...state, sortDescending: !state.sortDescending }
-            : { ...state, sortKey: key, sortDescending: true };
-        return {
-          ...updated,
-          cursorAddress: reconcileCursor(updated),
-        };
+        const sortKey = key;
+        const sortDescending = state.sortKey === key ? !state.sortDescending : true;
+        const updated = { ...state, sortKey, sortDescending };
+        return { sortKey, sortDescending, cursorAddress: reconcileCursor(updated) };
       }),
 
     setFilter: (text) =>

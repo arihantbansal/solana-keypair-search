@@ -21,13 +21,10 @@ interface AppActions {
   readonly setPrograms: (address: Address, next: LoadState<readonly ProgramRecord[]>) => void;
   readonly setBuffers: (address: Address, next: LoadState<readonly BufferRecord[]>) => void;
   readonly toggleSelection: (address: Address) => void;
-  readonly clearSelection: () => void;
   readonly moveCursor: (delta: number) => void;
   readonly setCursorToAddress: (address: Address) => void;
   readonly setFocusRegion: (region: FocusRegion) => void;
   readonly setSort: (key: SortKey) => void;
-  readonly setFilter: (text: string) => void;
-  readonly setHelpVisible: (visible: boolean) => void;
 }
 
 export interface AppState {
@@ -37,7 +34,7 @@ export interface AppState {
   readonly selection: ReadonlySet<Address>;
   /**
    * Identity-based cursor. Anchored to a specific keypair so the cursor
-   * never points at "row N" of a stale list — when filter/sort/visibility
+   * never points at "row N" of a stale list — when sort or visibility
    * changes, we either keep the same row focused or fall back to the first
    * visible row. Eliminates a whole class of off-by-one bugs.
    */
@@ -45,8 +42,6 @@ export interface AppState {
   readonly focusRegion: FocusRegion;
   readonly sortKey: SortKey;
   readonly sortDescending: boolean;
-  readonly filter: string;
-  readonly helpVisible: boolean;
   readonly actions: AppActions;
 }
 
@@ -74,8 +69,8 @@ function emptyBalances(): RowState["balances"] {
 }
 
 /**
- * After mutating something that affects the visible row set (rows, filter,
- * sort, hide), reconcile the cursor: keep it where it is if still visible,
+ * After mutating something that affects the visible row set (rows, sort,
+ * hide), reconcile the cursor: keep it where it is if still visible,
  * otherwise snap to the first visible row. Calls `selectVisibleRows` (not
  * `computeVisibleRows`) so the memoization cache is warmed for the render
  * that follows this mutation.
@@ -100,8 +95,6 @@ export const useAppStore = create<AppState>((set) => ({
   focusRegion: "list",
   sortKey: "buffers",
   sortDescending: true,
-  filter: "",
-  helpVisible: false,
   actions: {
     initRpcStatus: (status) => set({ rpc: status }),
 
@@ -204,8 +197,6 @@ export const useAppStore = create<AppState>((set) => ({
         return { selection: next };
       }),
 
-    clearSelection: () => set({ selection: new Set() }),
-
     moveCursor: (delta) =>
       set((state) => {
         const visible = selectVisibleRows(state);
@@ -236,17 +227,6 @@ export const useAppStore = create<AppState>((set) => ({
         const updated = { ...state, sortKey, sortDescending };
         return { sortKey, sortDescending, cursorAddress: reconcileCursor(updated) };
       }),
-
-    setFilter: (text) =>
-      set((state) => {
-        const updated = { ...state, filter: text };
-        return {
-          filter: text,
-          cursorAddress: reconcileCursor(updated),
-        };
-      }),
-
-    setHelpVisible: (visible) => set({ helpVisible: visible }),
   },
 }));
 
@@ -263,7 +243,6 @@ export const useAppStore = create<AppState>((set) => ({
 
 interface SelectVisibleCache {
   readonly rows: ReadonlyMap<Address, RowState>;
-  readonly filter: string;
   readonly sortKey: SortKey;
   readonly sortDescending: boolean;
   readonly result: readonly RowState[];
@@ -273,10 +252,7 @@ let visibleCache: SelectVisibleCache | null = null;
 
 function computeVisibleRows(state: AppState): readonly RowState[] {
   const all = Array.from(state.rows.values()).filter((r) => !r.isProgramKeypair);
-  const filtered = state.filter
-    ? all.filter((r) => r.address.toLowerCase().includes(state.filter.toLowerCase()))
-    : all;
-  const sorted = filtered.toSorted((a, b) => compareRows(a, b, state.sortKey));
+  const sorted = all.toSorted((a, b) => compareRows(a, b, state.sortKey));
   if (state.sortDescending) {
     sorted.reverse();
   }
@@ -287,7 +263,6 @@ export function selectVisibleRows(state: AppState): readonly RowState[] {
   if (
     visibleCache !== null &&
     visibleCache.rows === state.rows &&
-    visibleCache.filter === state.filter &&
     visibleCache.sortKey === state.sortKey &&
     visibleCache.sortDescending === state.sortDescending
   ) {
@@ -296,7 +271,6 @@ export function selectVisibleRows(state: AppState): readonly RowState[] {
   const result = computeVisibleRows(state);
   visibleCache = {
     rows: state.rows,
-    filter: state.filter,
     sortKey: state.sortKey,
     sortDescending: state.sortDescending,
     result,

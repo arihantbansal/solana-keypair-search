@@ -18,8 +18,11 @@ export function DetailPanel(): React.ReactNode {
     <box
       flexDirection="column"
       width={42}
-      border={true}
-      borderColor={focusRegion === "detail" ? "#5599ff" : "#444444"}
+      border
+      focusable
+      focused={focusRegion === "detail"}
+      borderColor="#444444"
+      focusedBorderColor="#5599ff"
       title=" detail "
       paddingLeft={1}
       paddingRight={1}

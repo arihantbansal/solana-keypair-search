@@ -45,8 +45,11 @@ export function KeypairList({ height }: KeypairListProps): React.ReactNode {
     <box
       flexDirection="column"
       flexGrow={1}
-      border={true}
-      borderColor={focusRegion === "list" ? "#5599ff" : "#444444"}
+      border
+      focusable
+      focused={focusRegion === "list"}
+      borderColor="#444444"
+      focusedBorderColor="#5599ff"
       title=" keypairs "
       paddingLeft={1}
       paddingRight={1}

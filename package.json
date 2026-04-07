@@ -2,6 +2,7 @@
   "name": "solana-keypair-search",
   "version": "0.1.0",
   "description": "TUI to scan your filesystem for Solana keypairs and inspect their balances, deployed programs, and reclaimable buffers.",
+  "license": "MIT",
   "type": "module",
   "module": "src/cli.tsx",
   "scripts": {

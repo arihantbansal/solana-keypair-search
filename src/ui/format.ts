@@ -1,9 +1,13 @@
-import type { Address } from "@solana/kit";
 import type { LoadState } from "../state/types.ts";
 import { LAMPORTS_PER_SOL } from "../rpc/constants.ts";
 
-/** Format an address as `aaaa…zzzz` for compact display in tables. */
-export function shortAddress(address: Address): string {
+/**
+ * Format an address (or any opaque identifier) as `aaaa…zzzz` for compact
+ * display in tables. Takes `string` rather than the branded `Address` type so
+ * callers can pass any short identifier and tests can exercise boundary
+ * lengths without conjuring real base58.
+ */
+export function shortAddress(address: string): string {
   if (address.length <= 9) {
     return address;
   }

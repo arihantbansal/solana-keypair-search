@@ -18,8 +18,12 @@ export interface ParsedKeypair {
  *
  * Returns the bytes if valid, null otherwise. Caller is responsible for
  * zeroing the returned buffer when finished.
+ *
+ * Exported for unit testing — this is the bug-prone gate of the heuristic
+ * scanner, and it's much easier to assert against directly than through the
+ * file-IO boundary.
  */
-function validateKeypairShape(parsed: unknown): Uint8Array | null {
+export function validateKeypairShape(parsed: unknown): Uint8Array | null {
   if (!Array.isArray(parsed) || parsed.length !== 64) {
     return null;
   }

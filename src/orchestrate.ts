@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import type { ParsedKeypair } from "./scan/parseKeypair.ts";
 import { runScan } from "./scan/runScan.ts";
-import type { Cluster, RpcClients } from "./rpc/clients.ts";
+import { ALL_CLUSTERS, type Cluster, type RpcClients } from "./rpc/clients.ts";
 import { fetchAccountSnapshots } from "./rpc/balances.ts";
 import { fetchBuffersByAuthority, fetchProgramsByAuthority } from "./rpc/programs.ts";
 import { PROGRAM_OWNERS } from "./rpc/constants.ts";
@@ -32,6 +32,15 @@ export async function runPipeline(opts: {
   const pendingAddresses: Address[] = [];
   const seenAddresses = new Set<Address>();
   let flushInFlight: Promise<void> | null = null;
+
+  // Pre-compute the list of clusters we'll never query so onKeypair can mark
+  // their cells as `skipped` immediately. The previous post-scan reconciliation
+  // loop left those cells in `pending` for the entire scan, which the user
+  // sees as `···` even though no RPC will ever fill them in.
+  const disabledClusters: readonly Cluster[] = ALL_CLUSTERS.filter(
+    (c) => !opts.clustersEnabled.has(c),
+  );
+  const PROGRAMS_DISABLED_REASON = "set HELIUS_API_KEY to enable";
 
   const flushOnce = async (): Promise<void> => {
     if (pendingAddresses.length === 0) {
@@ -69,6 +78,23 @@ export async function runPipeline(opts: {
       return;
     }
     seenAddresses.add(kp.address);
+
+    // Mark cells we'll never query so the UI never shows them as "loading".
+    // Has to happen here, not in a post-scan loop, because the user is
+    // staring at the table while the scan runs and stale `···` cells are
+    // misleading. The store actions are no-ops if the row is missing, but
+    // we just added it on the previous line so it's guaranteed to exist.
+    for (const cluster of disabledClusters) {
+      actions.setBalance(kp.address, cluster, {
+        status: "skipped",
+        reason: `${cluster} disabled`,
+      });
+    }
+    if (!opts.canQueryPrograms) {
+      actions.setPrograms(kp.address, { status: "skipped", reason: PROGRAMS_DISABLED_REASON });
+      actions.setBuffers(kp.address, { status: "skipped", reason: PROGRAMS_DISABLED_REASON });
+    }
+
     pendingAddresses.push(kp.address);
     triggerFlush();
   };
@@ -83,32 +109,6 @@ export async function runPipeline(opts: {
   // that's still pending. We just need to wait for it to finish.
   if (flushInFlight !== null) {
     await flushInFlight;
-  }
-
-  // Mark anything the user opted out of as skipped so the UI shows "—".
-  const allClusters: readonly Cluster[] = ["mainnet", "devnet", "testnet"];
-  for (const cluster of allClusters) {
-    if (opts.clustersEnabled.has(cluster)) {
-      continue;
-    }
-    for (const addr of seenAddresses) {
-      actions.setBalance(addr, cluster, {
-        status: "skipped",
-        reason: `${cluster} disabled`,
-      });
-    }
-  }
-  if (!opts.canQueryPrograms) {
-    for (const addr of seenAddresses) {
-      actions.setPrograms(addr, {
-        status: "skipped",
-        reason: "set HELIUS_API_KEY to enable",
-      });
-      actions.setBuffers(addr, {
-        status: "skipped",
-        reason: "set HELIUS_API_KEY to enable",
-      });
-    }
   }
 }
 

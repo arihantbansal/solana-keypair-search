@@ -32,6 +32,15 @@ const PROGRAM_ACCOUNT_SIZE = 36n;
 const PROGRAM_ACCOUNT_PROGRAMDATA_OFFSET = 4n;
 
 /**
+ * Concurrency cap for the per-ProgramData → Program account resolution.
+ * Each lookup is a `getProgramAccounts` call against the loader, which most
+ * RPCs aggressively rate-limit. Unbounded `Promise.all` over a wallet with
+ * many programs would burst past the limit on the first authority that owns
+ * a non-trivial number of deployments.
+ */
+const RESOLVE_PROGRAM_CONCURRENCY = 4;
+
+/**
  * Fetch all programs whose `upgrade_authority` matches the given wallet.
  *
  * This is a two-step query because BPFLoaderUpgradeable splits a deployment
@@ -66,17 +75,27 @@ export async function fetchProgramsByAuthority(
     .send();
 
   // Step 2: for each ProgramData PDA, resolve the matching Program account.
-  // Each lookup is independent — fan out in parallel.
-  return Promise.all(
-    programDataAccounts.map(async (entry) => {
+  // Each lookup is independent but bounded by `RESOLVE_PROGRAM_CONCURRENCY`
+  // — see the constant for why unbounded fan-out is wrong here.
+  const results: ProgramRecord[] = Array.from({ length: programDataAccounts.length });
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < programDataAccounts.length) {
+      const i = cursor++;
+      const entry = programDataAccounts[i];
+      if (!entry) {
+        continue;
+      }
       const programAddress = await resolveProgramFromProgramData(rpc, entry.pubkey);
-      return {
+      results[i] = {
         programAddress: programAddress ?? entry.pubkey,
         programDataAddress: entry.pubkey,
         lamports: entry.account.lamports,
       };
-    }),
-  );
+    }
+  };
+  await Promise.all(Array.from({ length: RESOLVE_PROGRAM_CONCURRENCY }, () => worker()));
+  return results;
 }
 
 /**

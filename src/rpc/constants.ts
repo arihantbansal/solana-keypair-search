@@ -1,10 +1,14 @@
 import { address } from "@solana/kit";
 import type { Address } from "@solana/kit";
+import { LOADER_V3_PROGRAM_ADDRESS } from "@solana-program/loader-v3";
 
-/** BPFLoaderUpgradeable program — owns ProgramData and Buffer accounts. */
-export const BPF_LOADER_UPGRADEABLE: Address = address(
-  "BPFLoaderUpgradeab1e11111111111111111111111",
-);
+/**
+ * BPFLoaderUpgradeable program — owns ProgramData and Buffer accounts.
+ *
+ * Sourced from `@solana-program/loader-v3` rather than redeclared so the
+ * constant stays in lockstep with the upstream typed address brand.
+ */
+export const BPF_LOADER_UPGRADEABLE: Address = LOADER_V3_PROGRAM_ADDRESS;
 
 /** Older non-upgradable BPF loaders. Programs deployed via these cannot be closed. */
 export const BPF_LOADER_2: Address = address("BPFLoader2111111111111111111111111111111111");

@@ -5,8 +5,9 @@ import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { App } from "./ui/App.tsx";
 import { useAppStore } from "./state/store.ts";
-import { ALL_CLUSTERS, createClients, resolveEndpoints } from "./rpc/clients.ts";
+import { createClients, resolveEndpoints } from "./rpc/clients.ts";
 import type { Cluster } from "./rpc/clients.ts";
+import { parseClusters } from "./rpc/clusters.ts";
 import { runPipeline } from "./orchestrate.ts";
 
 interface CliOptions {
@@ -43,15 +44,7 @@ function parseCliOptions(): CliOptions {
 
   const heliusKey = values["helius-key"] ?? process.env["HELIUS_API_KEY"];
 
-  const networksArg = values.networks;
-  const clusters = new Set<Cluster>(
-    networksArg
-      ? networksArg.split(",").flatMap((s) => {
-          const trimmed = s.trim();
-          return ALL_CLUSTERS.includes(trimmed as Cluster) ? [trimmed as Cluster] : [];
-        })
-      : ALL_CLUSTERS,
-  );
+  const clusters = parseClusters(values.networks);
 
   return {
     roots,

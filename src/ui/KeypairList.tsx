@@ -87,7 +87,14 @@ interface RowProps {
   readonly isSelected: boolean;
 }
 
-function Row({ row, isCursor, isSelected }: RowProps): React.ReactNode {
+/**
+ * Memoized so the per-cell store mutations from the RPC pipeline only re-render
+ * the *one* row whose data actually changed. The store builds a fresh row
+ * object only for the address being mutated and threads existing references
+ * through the rest of the map, so React.memo's shallow comparison correctly
+ * skips every untouched row.
+ */
+const Row = React.memo(function Row({ row, isCursor, isSelected }: RowProps): React.ReactNode {
   const checkbox = isSelected ? "[x]" : "[ ]";
   const cursorMarker = isCursor ? "▸" : " ";
   const reclaimable = reclaimableLamports(row);
@@ -108,7 +115,7 @@ function Row({ row, isCursor, isSelected }: RowProps): React.ReactNode {
       <text fg={fg}>{padCell(reclaimText, 8)}</text>
     </box>
   );
-}
+});
 
 function padCell(text: string, width: number): string {
   if (text.length >= width) {

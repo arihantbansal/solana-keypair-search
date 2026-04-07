@@ -1,5 +1,5 @@
 import React from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useAppStore } from "../state/store.ts";
 import { StatusBar } from "./StatusBar.tsx";
 import { HelpBar } from "./HelpBar.tsx";
@@ -23,15 +23,23 @@ const SORT_KEYS_BY_DIGIT: Record<string, SortKey> = {
  * that affects which pane gets the highlight border. The keyboard handler
  * reads cursor and selection imperatively via `getState()` so navigation
  * doesn't trigger an App re-render on every cursor move.
+ *
+ * Quit goes through `renderer.destroy()` (never `process.exit`) so OpenTUI
+ * restores the terminal — alternate-screen, raw mode, hidden cursor — before
+ * the process tears down. Ctrl-C is intentionally NOT handled here: the
+ * renderer is constructed with `exitOnCtrlC: true`, which installs OpenTUI's
+ * own SIGINT handler. Handling it twice would race the framework's cleanup.
  */
 export function App(): React.ReactNode {
+  const renderer = useRenderer();
   const { height } = useTerminalDimensions();
   const focusRegion = useAppStore((s) => s.focusRegion);
   const actions = useAppStore((s) => s.actions);
 
   useKeyboard((key) => {
-    if (key.name === "q" || (key.name === "c" && key.ctrl)) {
-      process.exit(0);
+    if (key.name === "q") {
+      renderer.destroy();
+      return;
     }
     if (key.name === "tab") {
       actions.setFocusRegion(focusRegion === "list" ? "detail" : "list");

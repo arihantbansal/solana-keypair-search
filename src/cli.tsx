@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createCliRenderer } from "@opentui/core";
+import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { App } from "./ui/App.tsx";
 import { useAppStore } from "./state/store.ts";
@@ -109,19 +109,27 @@ async function main(): Promise<void> {
     mainnetEndpoint: endpoints.mainnet,
   });
 
-  const renderer = await createCliRenderer({ exitOnCtrlC: true });
-  createRoot(renderer).render(<App />);
+  let renderer: CliRenderer | null = null;
+  try {
+    renderer = await createCliRenderer({ exitOnCtrlC: true });
+    createRoot(renderer).render(<App />);
 
-  // Pipeline runs in the background; the UI streams updates from the store.
-  void runPipeline({
-    roots: options.roots,
-    clients,
-    clustersEnabled: options.clusters,
-    canQueryPrograms,
-  });
+    // Pipeline runs alongside the UI; we await it so any rejection becomes
+    // a real error path with proper terminal cleanup, instead of an
+    // unhandled promise rejection that crashes on top of a live TUI.
+    await runPipeline({
+      roots: options.roots,
+      clients,
+      clustersEnabled: options.clusters,
+      canQueryPrograms,
+    });
+  } catch (err) {
+    // Restore the terminal before printing — without destroy(), the user is
+    // left in alternate-screen + raw mode and the error is invisible.
+    renderer?.destroy();
+    process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exitCode = 1;
+  }
 }
 
-void main().catch((err) => {
-  process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+void main();

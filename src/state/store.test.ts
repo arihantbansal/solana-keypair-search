@@ -231,3 +231,20 @@ describe("toggleSelection", () => {
     expect(useAppStore.getState().selection.has(A)).toBe(false);
   });
 });
+
+describe("clearSelection", () => {
+  test("empties a populated selection", () => {
+    const { actions } = useAppStore.getState();
+    actions.toggleSelection(A);
+    actions.toggleSelection(B);
+    expect(useAppStore.getState().selection.size).toBe(2);
+    actions.clearSelection();
+    expect(useAppStore.getState().selection.size).toBe(0);
+  });
+
+  test("is a no-op (same state reference) on an already-empty selection", () => {
+    const before = useAppStore.getState();
+    useAppStore.getState().actions.clearSelection();
+    expect(useAppStore.getState()).toBe(before);
+  });
+});

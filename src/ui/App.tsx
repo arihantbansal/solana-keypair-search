@@ -29,6 +29,10 @@ const SORT_KEYS_BY_DIGIT: Record<string, SortKey> = {
  * the process tears down. Ctrl-C is intentionally NOT handled here: the
  * renderer is constructed with `exitOnCtrlC: true`, which installs OpenTUI's
  * own SIGINT handler. Handling it twice would race the framework's cleanup.
+ *
+ * Enter copies the current selection to the system clipboard via OSC 52.
+ * This is the tool's primary "extraction" path — without it the user can
+ * see addresses but can't get them out of the TUI.
  */
 export function App(): React.ReactNode {
   const renderer = useRenderer();
@@ -42,6 +46,22 @@ export function App(): React.ReactNode {
     }
     if (key.name === "tab") {
       actions.setFocusRegion(focusRegion === "list" ? "detail" : "list");
+      return;
+    }
+    if (key.name === "return" || key.name === "enter") {
+      // Copy the selected addresses (one per line) to the system clipboard
+      // via OSC 52. Works over SSH and in most modern terminal emulators.
+      // No-op if nothing is selected — Enter on an empty selection is silent
+      // rather than copying the cursor row, to keep the binding's contract
+      // unambiguous.
+      const { selection } = useAppStore.getState();
+      if (selection.size > 0) {
+        renderer.copyToClipboardOSC52([...selection].join("\n"));
+      }
+      return;
+    }
+    if (key.name === "escape") {
+      actions.clearSelection();
       return;
     }
     if (focusRegion !== "list") {

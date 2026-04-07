@@ -78,6 +78,8 @@ OPTIONS:
 KEYS:
   ↑ ↓                   move cursor
   space                 toggle selection
+  enter                 copy selected addresses to clipboard (OSC 52)
+  esc                   clear selection
   tab                   switch focus between list and detail
   1-6                   sort by column (address/mainnet/devnet/testnet/programs/buffers)
   q / ctrl-c            quit

@@ -21,6 +21,7 @@ interface AppActions {
   readonly setPrograms: (address: Address, next: LoadState<readonly ProgramRecord[]>) => void;
   readonly setBuffers: (address: Address, next: LoadState<readonly BufferRecord[]>) => void;
   readonly toggleSelection: (address: Address) => void;
+  readonly clearSelection: () => void;
   readonly moveCursor: (delta: number) => void;
   readonly setCursorToAddress: (address: Address) => void;
   readonly setFocusRegion: (region: FocusRegion) => void;
@@ -202,6 +203,16 @@ export const useAppStore = create<AppState>((set) => ({
           next.add(address);
         }
         return { selection: next };
+      }),
+
+    clearSelection: () =>
+      set((state) => {
+        // Skip the mutation entirely if there's nothing to clear so subscribers
+        // that read `selection` don't re-render on a redundant Esc press.
+        if (state.selection.size === 0) {
+          return state;
+        }
+        return { selection: new Set<Address>() };
       }),
 
     moveCursor: (delta) =>

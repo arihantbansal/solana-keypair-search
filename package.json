@@ -4,9 +4,6 @@
   "description": "TUI to scan your filesystem for Solana keypairs and inspect their balances, deployed programs, and reclaimable buffers.",
   "type": "module",
   "module": "src/cli.tsx",
-  "bin": {
-    "solana-keypair-search": "./dist/cli.js"
-  },
   "scripts": {
     "dev": "bun run src/cli.tsx",
     "build": "bun build src/cli.tsx --outdir dist --target bun",

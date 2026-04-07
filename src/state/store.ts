@@ -1,7 +1,7 @@
 import { create } from "zustand/react";
 import { lamports } from "@solana/kit";
 import type { Address, Lamports } from "@solana/kit";
-import type { Cluster } from "../rpc/clients.ts";
+import { ALL_CLUSTERS, type Cluster } from "../rpc/clients.ts";
 import type { ProgramRecord, BufferRecord } from "../rpc/programs.ts";
 import type {
   FocusRegion,
@@ -55,7 +55,14 @@ const INITIAL_SCAN: ScanProgressView = {
 
 const INITIAL_RPC: RpcStatusView = {
   canQueryPrograms: false,
-  clustersEnabled: new Set<Cluster>(),
+  // Default to all clusters enabled. `cli.tsx` always calls `initRpcStatus`
+  // before the first render, so this default is normally invisible — it
+  // exists as a safer fallback for any future code path (or test) that
+  // constructs the store without the cli bootstrap. "All enabled" is more
+  // honest than "none enabled": the worst case is the user briefly sees
+  // pending cells instead of stale `—` cells for clusters that are actually
+  // enabled.
+  clustersEnabled: new Set<Cluster>(ALL_CLUSTERS),
   mainnetEndpoint: "",
 };
 

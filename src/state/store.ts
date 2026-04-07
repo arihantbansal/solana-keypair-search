@@ -1,5 +1,6 @@
 import { create } from "zustand/react";
-import type { Address } from "@solana/kit";
+import { lamports } from "@solana/kit";
+import type { Address, Lamports } from "@solana/kit";
 import type { Cluster } from "../rpc/clients.ts";
 import type { ProgramRecord, BufferRecord } from "../rpc/programs.ts";
 import type {
@@ -15,13 +16,14 @@ interface AppActions {
   readonly initRpcStatus: (status: RpcStatusView) => void;
   readonly addOrMergeKeypair: (address: Address, path: string) => void;
   readonly setScanProgress: (progress: ScanProgressView) => void;
-  readonly setBalance: (address: Address, cluster: Cluster, next: LoadState<bigint>) => void;
+  readonly setBalance: (address: Address, cluster: Cluster, next: LoadState<Lamports>) => void;
   readonly markProgramKeypair: (address: Address) => void;
   readonly setPrograms: (address: Address, next: LoadState<readonly ProgramRecord[]>) => void;
   readonly setBuffers: (address: Address, next: LoadState<readonly BufferRecord[]>) => void;
   readonly toggleSelection: (address: Address) => void;
   readonly clearSelection: () => void;
-  readonly setCursor: (cursor: number) => void;
+  readonly moveCursor: (delta: number) => void;
+  readonly setCursorToAddress: (address: Address) => void;
   readonly setFocusRegion: (region: FocusRegion) => void;
   readonly setSort: (key: SortKey) => void;
   readonly setFilter: (text: string) => void;
@@ -33,7 +35,13 @@ export interface AppState {
   readonly scan: ScanProgressView;
   readonly rows: ReadonlyMap<Address, RowState>;
   readonly selection: ReadonlySet<Address>;
-  readonly cursor: number;
+  /**
+   * Identity-based cursor. Anchored to a specific keypair so the cursor
+   * never points at "row N" of a stale list — when filter/sort/visibility
+   * changes, we either keep the same row focused or fall back to the first
+   * visible row. Eliminates a whole class of off-by-one bugs.
+   */
+  readonly cursorAddress: Address | null;
   readonly focusRegion: FocusRegion;
   readonly sortKey: SortKey;
   readonly sortDescending: boolean;
@@ -57,7 +65,7 @@ const INITIAL_RPC: RpcStatusView = {
 };
 
 function emptyBalances(): RowState["balances"] {
-  const pending: LoadState<bigint> = { status: "pending" };
+  const pending: LoadState<Lamports> = { status: "pending" };
   return {
     mainnet: { state: pending },
     devnet: { state: pending },
@@ -65,12 +73,30 @@ function emptyBalances(): RowState["balances"] {
   };
 }
 
+/**
+ * After mutating something that affects the visible row set (rows, filter,
+ * sort, hide), reconcile the cursor: keep it where it is if still visible,
+ * otherwise snap to the first visible row. Calls `selectVisibleRows` (not
+ * `computeVisibleRows`) so the memoization cache is warmed for the render
+ * that follows this mutation.
+ */
+function reconcileCursor(state: AppState): Address | null {
+  const visible = selectVisibleRows(state);
+  if (visible.length === 0) {
+    return null;
+  }
+  if (state.cursorAddress !== null && visible.some((r) => r.address === state.cursorAddress)) {
+    return state.cursorAddress;
+  }
+  return visible[0]?.address ?? null;
+}
+
 export const useAppStore = create<AppState>((set) => ({
   rpc: INITIAL_RPC,
   scan: INITIAL_SCAN,
   rows: new Map(),
   selection: new Set(),
-  cursor: 0,
+  cursorAddress: null,
   focusRegion: "list",
   sortKey: "buffers",
   sortDescending: true,
@@ -101,7 +127,11 @@ export const useAppStore = create<AppState>((set) => ({
             buffers: { status: "pending" },
           });
         }
-        return { rows: next };
+        // Reconcile so the cursor anchors to the first *visible* row when it's
+        // unset, and never lands on a hidden row when re-merging an entry that
+        // was already marked as a program keypair.
+        const cursorAddress = reconcileCursor({ ...state, rows: next });
+        return { rows: next, cursorAddress };
       }),
 
     setScanProgress: (progress) => set({ scan: progress }),
@@ -132,7 +162,8 @@ export const useAppStore = create<AppState>((set) => ({
         }
         const rows = new Map(state.rows);
         rows.set(address, { ...row, isProgramKeypair: true });
-        return { rows };
+        const cursorAddress = reconcileCursor({ ...state, rows });
+        return { rows, cursorAddress };
       }),
 
     setPrograms: (address, next) =>
@@ -170,37 +201,113 @@ export const useAppStore = create<AppState>((set) => ({
 
     clearSelection: () => set({ selection: new Set() }),
 
-    setCursor: (cursor) => set({ cursor }),
+    moveCursor: (delta) =>
+      set((state) => {
+        const visible = selectVisibleRows(state);
+        if (visible.length === 0) {
+          return state;
+        }
+        const currentIdx =
+          state.cursorAddress === null
+            ? 0
+            : visible.findIndex((r) => r.address === state.cursorAddress);
+        const startIdx = currentIdx === -1 ? 0 : currentIdx;
+        const nextIdx = Math.max(0, Math.min(visible.length - 1, startIdx + delta));
+        const nextAddress = visible[nextIdx]?.address ?? null;
+        if (nextAddress === state.cursorAddress) {
+          return state;
+        }
+        return { cursorAddress: nextAddress };
+      }),
+
+    setCursorToAddress: (address) => set({ cursorAddress: address }),
 
     setFocusRegion: (region) => set({ focusRegion: region }),
 
     setSort: (key) =>
-      set((state) =>
-        state.sortKey === key
-          ? { sortDescending: !state.sortDescending }
-          : { sortKey: key, sortDescending: true },
-      ),
+      set((state) => {
+        const updated =
+          state.sortKey === key
+            ? { ...state, sortDescending: !state.sortDescending }
+            : { ...state, sortKey: key, sortDescending: true };
+        return {
+          ...updated,
+          cursorAddress: reconcileCursor(updated),
+        };
+      }),
 
-    setFilter: (text) => set({ filter: text }),
+    setFilter: (text) =>
+      set((state) => {
+        const updated = { ...state, filter: text };
+        return {
+          filter: text,
+          cursorAddress: reconcileCursor(updated),
+        };
+      }),
 
     setHelpVisible: (visible) => set({ helpVisible: visible }),
   },
 }));
 
-/** Selectors — computed views over the store, memoized at the call site. */
+/** ─── Selectors ──────────────────────────────────────────────────────────
+ *
+ * `selectVisibleRows` is closure-memoized so multiple subscribers receive
+ * the SAME array reference until the inputs change. Without this, every
+ * call returns a fresh array → zustand's Object.is equality always sees
+ * inequality → every subscriber re-renders on every store mutation.
+ *
+ * The cache key is the conjunction of every state slice that affects the
+ * result. When any of them changes, we recompute and cache the new array.
+ */
 
-export function selectVisibleRows(state: AppState): readonly RowState[] {
+interface SelectVisibleCache {
+  readonly rows: ReadonlyMap<Address, RowState>;
+  readonly filter: string;
+  readonly sortKey: SortKey;
+  readonly sortDescending: boolean;
+  readonly result: readonly RowState[];
+}
+
+let visibleCache: SelectVisibleCache | null = null;
+
+function computeVisibleRows(state: AppState): readonly RowState[] {
   const all = Array.from(state.rows.values()).filter((r) => !r.isProgramKeypair);
-
   const filtered = state.filter
     ? all.filter((r) => r.address.toLowerCase().includes(state.filter.toLowerCase()))
     : all;
-
-  const sorted = [...filtered].toSorted((a, b) => compareRows(a, b, state.sortKey));
+  const sorted = filtered.toSorted((a, b) => compareRows(a, b, state.sortKey));
   if (state.sortDescending) {
     sorted.reverse();
   }
   return sorted;
+}
+
+export function selectVisibleRows(state: AppState): readonly RowState[] {
+  if (
+    visibleCache !== null &&
+    visibleCache.rows === state.rows &&
+    visibleCache.filter === state.filter &&
+    visibleCache.sortKey === state.sortKey &&
+    visibleCache.sortDescending === state.sortDescending
+  ) {
+    return visibleCache.result;
+  }
+  const result = computeVisibleRows(state);
+  visibleCache = {
+    rows: state.rows,
+    filter: state.filter,
+    sortKey: state.sortKey,
+    sortDescending: state.sortDescending,
+    result,
+  };
+  return result;
+}
+
+export function selectCursorRow(state: AppState): RowState | null {
+  if (state.cursorAddress === null) {
+    return null;
+  }
+  return state.rows.get(state.cursorAddress) ?? null;
 }
 
 function compareRows(a: RowState, b: RowState, key: SortKey): number {
@@ -208,21 +315,27 @@ function compareRows(a: RowState, b: RowState, key: SortKey): number {
     case "address":
       return a.address.localeCompare(b.address);
     case "mainnet":
-      return compareLoadedBigint(a.balances.mainnet.state, b.balances.mainnet.state);
+      return compareLoadedLamports(a.balances.mainnet.state, b.balances.mainnet.state);
     case "devnet":
-      return compareLoadedBigint(a.balances.devnet.state, b.balances.devnet.state);
+      return compareLoadedLamports(a.balances.devnet.state, b.balances.devnet.state);
     case "testnet":
-      return compareLoadedBigint(a.balances.testnet.state, b.balances.testnet.state);
+      return compareLoadedLamports(a.balances.testnet.state, b.balances.testnet.state);
     case "programs":
       return countOf(a.programs) - countOf(b.programs);
-    case "buffers":
-      return reclaimableLamports(a) - reclaimableLamports(b) > 0n ? 1 : -1;
+    case "buffers": {
+      // Use sign comparison over subtraction so the Lamports brand is
+      // preserved on the operands — consistent with compareLoadedLamports.
+      const la = reclaimableLamports(a);
+      const lb = reclaimableLamports(b);
+      if (la === lb) return 0;
+      return la < lb ? -1 : 1;
+    }
   }
 }
 
-function compareLoadedBigint(a: LoadState<bigint>, b: LoadState<bigint>): number {
-  const av = a.status === "loaded" ? a.value : 0n;
-  const bv = b.status === "loaded" ? b.value : 0n;
+function compareLoadedLamports(a: LoadState<Lamports>, b: LoadState<Lamports>): number {
+  const av = a.status === "loaded" ? a.value : lamports(0n);
+  const bv = b.status === "loaded" ? b.value : lamports(0n);
   if (av === bv) return 0;
   return av < bv ? -1 : 1;
 }
@@ -231,7 +344,7 @@ function countOf<T>(state: LoadState<readonly T[]>): number {
   return state.status === "loaded" ? state.value.length : 0;
 }
 
-export function reclaimableLamports(row: RowState): bigint {
+export function reclaimableLamports(row: RowState): Lamports {
   let total = 0n;
   if (row.programs.status === "loaded") {
     for (const p of row.programs.value) {
@@ -243,5 +356,5 @@ export function reclaimableLamports(row: RowState): bigint {
       total += b.lamports;
     }
   }
-  return total;
+  return lamports(total);
 }

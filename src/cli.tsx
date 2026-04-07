@@ -83,10 +83,10 @@ OPTIONS:
   -h, --help             Print this help.
 
 KEYS:
-  arrows / hjkl         move cursor
+  ↑ ↓                   move cursor
   space                 toggle selection
   tab                   switch focus between list and detail
-  1-6                   sort by column
+  1-6                   sort by column (address/mainnet/devnet/testnet/programs/buffers)
   q / ctrl-c            quit
 `);
 }

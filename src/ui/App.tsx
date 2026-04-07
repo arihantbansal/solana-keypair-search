@@ -1,6 +1,6 @@
 import React from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useAppStore, selectVisibleRows } from "../state/store.ts";
+import { useAppStore } from "../state/store.ts";
 import { StatusBar } from "./StatusBar.tsx";
 import { HelpBar } from "./HelpBar.tsx";
 import { KeypairList } from "./KeypairList.tsx";
@@ -16,10 +16,16 @@ const SORT_KEYS_BY_DIGIT: Record<string, SortKey> = {
   "6": "buffers",
 };
 
+/**
+ * Root component. Owns the keyboard handler and the split-pane layout.
+ *
+ * Deliberately subscribes to the bare minimum: only `focusRegion`, since
+ * that affects which pane gets the highlight border. The keyboard handler
+ * reads cursor and selection imperatively via `getState()` so navigation
+ * doesn't trigger an App re-render on every cursor move.
+ */
 export function App(): React.ReactNode {
   const { height } = useTerminalDimensions();
-  const visibleRows = useAppStore(selectVisibleRows);
-  const cursor = useAppStore((s) => s.cursor);
   const focusRegion = useAppStore((s) => s.focusRegion);
   const actions = useAppStore((s) => s.actions);
 
@@ -35,17 +41,17 @@ export function App(): React.ReactNode {
       return;
     }
     if (key.name === "up") {
-      actions.setCursor(Math.max(0, cursor - 1));
+      actions.moveCursor(-1);
       return;
     }
     if (key.name === "down") {
-      actions.setCursor(Math.min(visibleRows.length - 1, cursor + 1));
+      actions.moveCursor(1);
       return;
     }
     if (key.name === "space") {
-      const row = visibleRows[cursor];
-      if (row) {
-        actions.toggleSelection(row.address);
+      const { cursorAddress } = useAppStore.getState();
+      if (cursorAddress !== null) {
+        actions.toggleSelection(cursorAddress);
       }
       return;
     }

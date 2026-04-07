@@ -15,7 +15,7 @@ export const BPF_LOADER_1: Address = address("BPFLoader1111111111111111111111111
 export const SYSTEM_PROGRAM: Address = address("11111111111111111111111111111111");
 
 /** Set of all loaders we recognize as "this account is a program, not a wallet". */
-export const PROGRAM_OWNERS: ReadonlySet<string> = new Set([
+export const PROGRAM_OWNERS: ReadonlySet<Address> = new Set<Address>([
   BPF_LOADER_UPGRADEABLE,
   BPF_LOADER_2,
   BPF_LOADER_1,

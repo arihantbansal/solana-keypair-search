@@ -1,20 +1,18 @@
 import React from "react";
-import { useAppStore, selectVisibleRows, reclaimableLamports } from "../state/store.ts";
+import type { Lamports } from "@solana/kit";
+import { useAppStore, selectCursorRow, reclaimableLamports } from "../state/store.ts";
 import type { LoadState, RowState } from "../state/types.ts";
 import type { ProgramRecord, BufferRecord } from "../rpc/programs.ts";
 import { formatBalanceCell, formatSol, shortAddress } from "./format.ts";
 
 /**
- * Detail panel for the row currently under the cursor. Shows balances on
- * each cluster, programs deployed, and reclaimable buffers.
+ * Detail panel for the row currently under the cursor. Subscribes to the
+ * cursor row identity-based — re-renders only when the cursor moves to a
+ * different row OR when the focused row's data changes.
  */
 export function DetailPanel(): React.ReactNode {
-  const rows = useAppStore(selectVisibleRows);
-  const cursor = useAppStore((s) => s.cursor);
+  const row = useAppStore(selectCursorRow);
   const focusRegion = useAppStore((s) => s.focusRegion);
-
-  const safeCursor = Math.min(cursor, Math.max(0, rows.length - 1));
-  const row = rows[safeCursor];
 
   return (
     <box
@@ -72,7 +70,7 @@ function BalanceLine({
   state,
 }: {
   readonly label: string;
-  readonly state: LoadState<bigint>;
+  readonly state: LoadState<Lamports>;
 }): React.ReactNode {
   return (
     <box flexDirection="row">
@@ -102,7 +100,7 @@ function ProgramsView({
         <box flexDirection="column">
           {state.value.map((p) => (
             <text key={p.programDataAddress} fg="#cccccc">
-              • {shortAddress(p.programDataAddress)} {formatSol(p.lamports)} ◎
+              • {shortAddress(p.programAddress)} {formatSol(p.lamports)} ◎
             </text>
           ))}
         </box>

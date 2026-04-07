@@ -1,4 +1,4 @@
-import type { Address } from "@solana/kit";
+import type { Address, Lamports } from "@solana/kit";
 import type { Cluster } from "../rpc/clients.ts";
 import type { ProgramRecord, BufferRecord } from "../rpc/programs.ts";
 
@@ -17,7 +17,7 @@ export type LoadState<TValue> =
   | { readonly status: "error"; readonly message: string };
 
 export interface BalanceCell {
-  readonly state: LoadState<bigint>;
+  readonly state: LoadState<Lamports>;
 }
 
 export interface RowState {

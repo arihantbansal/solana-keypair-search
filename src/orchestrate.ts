@@ -7,9 +7,19 @@ import { fetchBuffersByAuthority, fetchProgramsByAuthority } from "./rpc/program
 import { PROGRAM_OWNERS } from "./rpc/constants.ts";
 import { useAppStore } from "./state/store.ts";
 
+/** Max addresses processed per RPC fan-out batch. */
+const FLUSH_BATCH_SIZE = 50;
+/** Concurrent program/buffer queries (each is a separate getProgramAccounts). */
+const PROGRAM_QUERY_CONCURRENCY = 4;
+
 /**
- * Orchestrate the full pipeline: scan → balances → programs/buffers.
- * Each phase streams its results into the store as they arrive.
+ * Orchestrate the scan → balances → programs/buffers pipeline.
+ *
+ * Concurrency model: a single `flushInFlight` promise serializes all flush
+ * operations. New keypairs accumulate in `pendingAddresses` while a flush is
+ * running, and the next flush picks them up after the current one finishes.
+ * This eliminates the timer + eager-flush race in the original implementation
+ * and provides natural backpressure: scan throughput auto-limits to RPC speed.
  */
 export async function runPipeline(opts: {
   readonly roots: readonly string[];
@@ -19,48 +29,48 @@ export async function runPipeline(opts: {
 }): Promise<void> {
   const { actions } = useAppStore.getState();
 
-  // Phase 1 — scan filesystem; queue addresses for balance fetch.
   const pendingAddresses: Address[] = [];
   const seenAddresses = new Set<Address>();
+  let flushInFlight: Promise<void> | null = null;
 
-  const flushBalances = async (): Promise<void> => {
+  const flushOnce = async (): Promise<void> => {
     if (pendingAddresses.length === 0) {
       return;
     }
-    const batch = pendingAddresses.splice(0, pendingAddresses.length);
+    const batch = pendingAddresses.splice(0, FLUSH_BATCH_SIZE);
     await Promise.all(
       [...opts.clustersEnabled].map((cluster) =>
         fetchClusterBalances(opts.clients, cluster, batch),
       ),
     );
-    // After mainnet balance lands, kick off programs/buffers for the same batch.
     if (opts.canQueryPrograms) {
       await fetchProgramsForBatch(opts.clients, batch);
     }
   };
 
-  let flushTimer: ReturnType<typeof setTimeout> | null = null;
-  const scheduleFlush = (): void => {
-    if (flushTimer !== null) {
+  const triggerFlush = (): void => {
+    if (flushInFlight !== null) {
       return;
     }
-    flushTimer = setTimeout(() => {
-      flushTimer = null;
-      void flushBalances();
-    }, 250);
+    flushInFlight = (async (): Promise<void> => {
+      // Drain in a loop so a flush that completes while new addresses
+      // arrived during it picks them up immediately.
+      while (pendingAddresses.length > 0) {
+        await flushOnce();
+      }
+    })().finally(() => {
+      flushInFlight = null;
+    });
   };
 
   const onKeypair = (kp: ParsedKeypair): void => {
     actions.addOrMergeKeypair(kp.address, kp.path);
-    if (!seenAddresses.has(kp.address)) {
-      seenAddresses.add(kp.address);
-      pendingAddresses.push(kp.address);
-      if (pendingAddresses.length >= 50) {
-        void flushBalances();
-      } else {
-        scheduleFlush();
-      }
+    if (seenAddresses.has(kp.address)) {
+      return;
     }
+    seenAddresses.add(kp.address);
+    pendingAddresses.push(kp.address);
+    triggerFlush();
   };
 
   await runScan(opts.roots, {
@@ -68,15 +78,15 @@ export async function runPipeline(opts: {
     onProgress: (p) => actions.setScanProgress(p),
   });
 
-  // Final flush to drain whatever's left.
-  if (flushTimer !== null) {
-    clearTimeout(flushTimer);
-    flushTimer = null;
+  // Every keypair that arrived during the scan already called `triggerFlush`.
+  // If a flush is still in flight, its drain loop will pick up everything
+  // that's still pending. We just need to wait for it to finish.
+  if (flushInFlight !== null) {
+    await flushInFlight;
   }
-  await flushBalances();
 
-  // Mark any clusters the user didn't enable as skipped, so the UI shows "—".
-  const allClusters: Cluster[] = ["mainnet", "devnet", "testnet"];
+  // Mark anything the user opted out of as skipped so the UI shows "—".
+  const allClusters: readonly Cluster[] = ["mainnet", "devnet", "testnet"];
   for (const cluster of allClusters) {
     if (opts.clustersEnabled.has(cluster)) {
       continue;
@@ -138,9 +148,6 @@ async function fetchProgramsForBatch(
   addresses: readonly Address[],
 ): Promise<void> {
   const { actions } = useAppStore.getState();
-  // Programs/buffers query is per-address (memcmp on authority); fan out
-  // with a small concurrency cap so we don't blow through the RPC budget.
-  const CONCURRENCY = 4;
   let cursor = 0;
   const next = async (): Promise<void> => {
     while (cursor < addresses.length) {
@@ -165,5 +172,5 @@ async function fetchProgramsForBatch(
       }
     }
   };
-  await Promise.all(Array.from({ length: CONCURRENCY }, () => next()));
+  await Promise.all(Array.from({ length: PROGRAM_QUERY_CONCURRENCY }, () => next()));
 }

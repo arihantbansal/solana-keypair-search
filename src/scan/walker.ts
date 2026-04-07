@@ -117,7 +117,6 @@ const SKIP_EXTENSIONS: ReadonlySet<string> = new Set([
   ".lock",
   ".log",
   ".map",
-  ".min.js",
 ]);
 
 /**

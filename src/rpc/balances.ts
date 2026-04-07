@@ -1,11 +1,13 @@
-import type { Address } from "@solana/kit";
+import { lamports } from "@solana/kit";
+import type { Address, Lamports } from "@solana/kit";
 import type { SolanaRpc } from "./clients.ts";
+import { SYSTEM_PROGRAM } from "./constants.ts";
 
 const BATCH_SIZE = 100;
 
 export interface AccountSnapshot {
   readonly address: Address;
-  readonly lamports: bigint;
+  readonly lamports: Lamports;
   readonly owner: Address;
   readonly executable: boolean;
 }
@@ -44,11 +46,11 @@ export async function fetchAccountSnapshots(
         return;
       }
       if (account === null) {
+        // A non-existent account is logically a 0-balance wallet owned by the System Program.
         result.set(addr, {
           address: addr,
-          lamports: 0n,
-          // Default owner for an account that doesn't exist yet.
-          owner: addr,
+          lamports: lamports(0n),
+          owner: SYSTEM_PROGRAM,
           executable: false,
         });
         return;

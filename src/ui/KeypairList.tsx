@@ -10,13 +10,13 @@ interface KeypairListProps {
 /**
  * Multi-selectable list of discovered keypairs.
  *
- * OpenTUI's <select> is single-select only, so we render rows manually and
- * drive cursor + selection from the store. A small "window around cursor"
- * computation handles vertical scrolling without needing a scrollbox.
+ * OpenTUI's <select> is single-select only, so rows are rendered manually.
+ * Cursor and selection are anchored to addresses (not indices) so the visual
+ * cursor stays glued to the row it's on across filter/sort changes.
  */
 export function KeypairList({ height }: KeypairListProps): React.ReactNode {
   const rows = useAppStore(selectVisibleRows);
-  const cursor = useAppStore((s) => s.cursor);
+  const cursorAddress = useAppStore((s) => s.cursorAddress);
   const selection = useAppStore((s) => s.selection);
   const focusRegion = useAppStore((s) => s.focusRegion);
   const sortKey = useAppStore((s) => s.sortKey);
@@ -24,10 +24,16 @@ export function KeypairList({ height }: KeypairListProps): React.ReactNode {
 
   // Header (1 row) + separator (1 row) consume from the available height.
   const visibleRowCount = Math.max(1, height - 2);
-  const safeCursor = Math.min(cursor, Math.max(0, rows.length - 1));
+  const cursorIdx =
+    cursorAddress === null
+      ? 0
+      : Math.max(
+          0,
+          rows.findIndex((r) => r.address === cursorAddress),
+        );
   const start = Math.max(
     0,
-    Math.min(rows.length - visibleRowCount, safeCursor - Math.floor(visibleRowCount / 2)),
+    Math.min(rows.length - visibleRowCount, cursorIdx - Math.floor(visibleRowCount / 2)),
   );
   const visibleRows = rows.slice(start, start + visibleRowCount);
 
@@ -61,11 +67,11 @@ export function KeypairList({ height }: KeypairListProps): React.ReactNode {
           <text fg="#666666">no keypairs found yet…</text>
         </box>
       ) : (
-        visibleRows.map((row, i) => (
+        visibleRows.map((row) => (
           <Row
             key={row.address}
             row={row}
-            isCursor={start + i === safeCursor && focusRegion === "list"}
+            isCursor={row.address === cursorAddress && focusRegion === "list"}
             isSelected={selection.has(row.address)}
           />
         ))

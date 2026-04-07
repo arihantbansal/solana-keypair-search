@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn",
+    "style": "off"
+  },
+  "rules": {
+    "no-console": "off",
+    "no-unused-vars": "error",
+    "no-explicit-any": "error",
+    "no-non-null-assertion": "error",
+    "no-await-in-loop": "off"
+  },
+  "ignorePatterns": ["dist/", "node_modules/"]
+}
